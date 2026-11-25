@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IBEX 35 · Simulador de cartera a una semana</title>
+  <meta name="description" content="Simulador de una cartera de 15.000 € en blue chips del IBEX 35 con datos de mercado en vivo, costes de transacción y escenarios Monte Carlo a una semana." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0c10'/%3E%3Ctext x='16' y='21' font-family='monospace' font-size='13' fill='%23f0b849' text-anchor='middle'%3EIB%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Saltar al contenido</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">IB</span>
+      <span class="brand-text">
+        <strong>IBEX 35</strong>
+        <span>Mesa de simulación</span>
+      </span>
+    </div>
+
+    <div class="tape" id="tape" aria-label="Cotizaciones del IBEX 35"></div>
+
+    <div class="status-wrap">
+      <div class="status" id="status" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="status-text">Cargando…</span>
+      </div>
+      <button class="icon-btn" id="refresh" type="button" title="Actualizar cotizaciones" aria-label="Actualizar cotizaciones">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="main" class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Renta variable española · horizonte 5 sesiones</p>
+        <h1>Cartera de 15.000 € en blue chips del IBEX 35</h1>
+        <p class="lede">
+          Cotizaciones y volatilidad recalculadas al abrir la página. Ajusta pesos, costes de bróker y horizonte;
+          el motor Monte Carlo reevalúa el riesgo-recompensa de la semana en cada cambio.
+        </p>
+      </div>
+      <dl class="asof" id="asof">
+        <div><dt>Cierres</dt><dd id="asof-date">—</dd></div>
+        <div><dt>Última lectura</dt><dd id="asof-time">—</dd></div>
+        <div><dt>Proveedor</dt><dd id="asof-source">—</dd></div>
+      </dl>
+    </section>
+
+    <div class="banner" id="banner" hidden>
+      <span class="banner-icon" aria-hidden="true">!</span>
+      <p id="banner-text">No se pudo contactar con el proveedor de mercado. Se muestran los cierres guardados en data.js.</p>
+      <button class="btn btn-quiet" id="banner-retry" type="button">Reintentar</button>
+    </div>
+
+    <section class="kpis" id="kpis" aria-label="Indicadores de la cartera"></section>
+
+    <div class="grid">
+      <section class="panel panel-alloc" aria-labelledby="alloc-title">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">01 · Construcción</p>
+            <h2 id="alloc-title">Asignación de cartera</h2>
+          </div>
+          <div class="presets" role="group" aria-label="Presets de asignación">
+            <button class="chip is-active" data-preset="equal" type="button">Equiponderado</button>
+            <button class="chip" data-preset="banks" type="button">Banca</button>
+            <button class="chip" data-preset="defensive" type="button">Defensivo</button>
+          </div>
+        </div>
+
+        <div class="budget-row">
+          <label for="budget">Capital inicial</label>
+          <div class="input-euro">
+            <input id="budget" type="number" min="1000" max="1000000" step="500" value="15000" inputmode="numeric" />
+            <span aria-hidden="true">€</span>
+          </div>
+          <p class="budget-note" id="budget-note">Reparto relativo: los pesos se normalizan al 100 %.</p>
+        </div>
+
+        <div class="alloc-head" aria-hidden="true">
+          <span>Valor</span>
+          <span>Precio</span>
+          <span>Peso</span>
+          <span>Importe</span>
+          <span>Acciones</span>
+        </div>
+        <ul class="alloc-list" id="alloc-list"></ul>
+
+        <div class="alloc-foot">
+          <div><span>Invertido</span><strong id="foot-invested">—</strong></div>
+          <div><span>Comisiones compra</span><strong id="foot-comm">—</strong></div>
+          <div><span>ITF 0,2 %</span><strong id="foot-ftt">—</strong></div>
+          <div><span>Efectivo restante</span><strong id="foot-cash">—</strong></div>
+        </div>
+      </section>
+
+      <section class="panel panel-setup" aria-labelledby="setup-title">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">02 · Supuestos</p>
+            <h2 id="setup-title">Costes y modelo</h2>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="broker">Perfil de bróker</label>
+          <select id="broker">
+            <option value="lowcost">Bróker low-cost · 0,12 % (mín. 1 €)</option>
+            <option value="bank" selected>Banca tradicional · 0,59 % (mín. 6 €)</option>
+            <option value="office">Agencia / oficina · 0,90 % (mín. 12 €)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="paths">Trayectorias Monte Carlo</label>
+          <select id="paths">
+            <option value="5000">5.000 · rápido</option>
+            <option value="10000" selected>10.000 · equilibrado</option>
+            <option value="25000">25.000 · preciso</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="drift">Deriva esperada</label>
+          <select id="drift">
+            <option value="neutral" selected>Neutra · sin tendencia</option>
+            <option value="history">Histórica · media de 6 meses</option>
+            <option value="momentum">Momentum · últimas 20 sesiones</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="model">Distribución</label>
+          <select id="model">
+            <option value="gaussian" selected>Normal correlacionada</option>
+            <option value="bootstrap">Bootstrap histórico</option>
+          </select>
+        </div>
+
+        <div class="switches">
+          <label class="switch">
+            <input type="checkbox" id="ftt" checked />
+            <span class="switch-track" aria-hidden="true"></span>
+            <span>ITF español 0,2 % en compra</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="exit-fee" checked />
+            <span class="switch-track" aria-hidden="true"></span>
+            <span>Comisión de venta al cerrar</span>
+          </label>
+        </div>
+
+        <div class="cost-note">
+          <p><strong>Ida y vuelta:</strong> <span id="round-trip">—</span> sobre el capital invertido.</p>
+          <p class="muted">Comisión mínima por orden aplicada a cada valor. Sin deslizamiento ni liquidez.</p>
+        </div>
+
+        <div class="corr-block">
+          <p class="panel-kicker">Correlación de retornos diarios</p>
+          <div class="corr" id="corr" role="table" aria-label="Matriz de correlaciones"></div>
+        </div>
+      </section>
+
+      <section class="panel panel-fan" aria-labelledby="fan-title">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">03 · Abanico de resultados</p>
+            <h2 id="fan-title">Rango de la cartera, día a día</h2>
+          </div>
+          <div class="legend" aria-hidden="true">
+            <span class="key key-p90"></span>P5–P95
+            <span class="key key-p50"></span>P25–P75
+            <span class="key key-med"></span>Mediana
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="fan" role="img" aria-label="Abanico de percentiles del valor de la cartera a lo largo de cinco sesiones"></canvas>
+        </div>
+        <p class="caption">Variación porcentual del capital total (incluye efectivo no invertido), antes de impuestos sobre plusvalías.</p>
+      </section>
+
+      <section class="panel panel-hist" aria-labelledby="hist-title">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">04 · Distribución final</p>
+            <h2 id="hist-title">Resultado a una semana</h2>
+          </div>
+        </div>
+        <div class="canvas-wrap canvas-wrap-sm">
+          <canvas id="hist" role="img" aria-label="Histograma de rentabilidad neta de la cartera a una semana"></canvas>
+        </div>
+        <div class="hist-stats" id="hist-stats"></div>
+      </section>
+
+      <section class="panel panel-scenarios" aria-labelledby="sc-title">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">05 · Escenarios</p>
+            <h2 id="sc-title">Percentiles de resultado</h2>
+          </div>
+        </div>
+        <table class="table scenarios">
+          <thead>
+            <tr><th scope="col">Escenario</th><th scope="col">Capital final</th><th scope="col">Resultado</th><th scope="col">Retorno</th></tr>
+          </thead>
+          <tbody id="scenarios"></tbody>
+        </table>
+        <p class="caption">Sobre 15.000 € de capital y costes de entrada y salida incluidos.</p>
+      </section>
+
+      <section class="panel panel-orders" aria-labelledby="orders-title">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">06 · Órdenes</p>
+            <h2 id="orders-title">Plan de ejecución</h2>
+          </div>
+          <button class="btn btn-primary" id="execute" type="button">Ejecutar plan</button>
+        </div>
+        <div class="table-scroll">
+        <table class="table orders">
+          <thead>
+            <tr><th scope="col">Valor</th><th scope="col" class="num">Acciones</th><th scope="col" class="num">Precio</th><th scope="col" class="num">Importe</th><th scope="col" class="num">Costes</th><th scope="col" class="num">Total</th></tr>
+          </thead>
+          <tbody id="orders"></tbody>
+          <tfoot>
+            <tr><th scope="row">Total</th><td></td><td></td><td class="num" id="ord-amount">—</td><td class="num" id="ord-cost">—</td><td class="num" id="ord-total">—</td></tr>
+          </tfoot>
+        </table>
+        </div>
+      </section>
+
+      <section class="panel panel-book" aria-labelledby="book-title">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">07 · Cartera ejecutada</p>
+            <h2 id="book-title">Libro de posiciones</h2>
+          </div>
+          <button class="btn btn-quiet" id="reset-book" type="button" hidden>Reiniciar</button>
+        </div>
+        <div id="book-body"></div>
+      </section>
+    </div>
+
+    <footer class="footer">
+      <details>
+        <summary>Metodología, fuentes y limitaciones</summary>
+        <div class="method">
+          <div>
+            <h3>Datos</h3>
+            <p>
+              Al abrir la página se solicitan a Yahoo Finance las cotizaciones y los cierres diarios de las últimas
+              ~27 semanas para SAN.MC, BBVA.MC, TEF.MC e IAG.MC. Si el proveedor, la red o los proxies fallan, se usa
+              <code>data.js</code> como instantánea de respaldo y se indica en la cabecera. Cada valor muestra si su precio
+              procede de mercado o de respaldo.
+            </p>
+          </div>
+          <div>
+            <h3>Riesgo</h3>
+            <p>
+              Volatilidad y correlaciones se calculan con retornos logarítmicos diarios de la muestra descargada. El motor
+              simula cinco sesiones con una normal multivariante (Cholesky de la covarianza) o remuestreando bloques
+              históricos de cinco días consecutivos, conservando la correlación entre valores. Los percentiles se calculan
+              sobre las trayectorias simuladas.
+            </p>
+          </div>
+          <div>
+            <h3>Costes</h3>
+            <p>
+              Comisión de compra y venta según el perfil de bróker, mínimo por orden, e ITF del 0,2 % sobre la compra de
+              acciones españolas. El número de acciones se redondea a la baja, por lo que parte del capital queda en efectivo.
+            </p>
+          </div>
+          <div>
+            <h3>Límites</h3>
+            <p>
+              Modelo de simulación con fines educativos: no incorpora saltos, gaps de apertura, liquidez, impuestos sobre
+              plusvalías ni cambios de volatilidad intradía. La volatilidad pasada no predice la futura. No es asesoramiento
+              financiero.
+            </p>
+          </div>
+        </div>
+      </details>
+      <p class="footer-line">Simulador educativo · Los datos pueden retrasarse respecto al mercado continuo. Powered by <span style="color: gold;">Goldfinger</span></p>
+    </footer>
+  </main>
+
+  <script src="data.js"></script>
+  <script src="live.js"></script>
+  <script src="app.js"></script>
+<script data-pplx-inline-edit>
+(function () {
+  if (window === window.top) return;
+
+  const allowedParentOrigins = ["https://www.perplexity.ai","https://perplexity.ai","https://testing.perplexity.ai","https://staging.perplexity.ai","https://*.preview.i.perplexity.ai","http://perplexity.localhost","http://localhost:1420","http://127.0.0.1:1420","http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"];
+  const MAX_FONT_BYTES = 500 * 1024;
+  const MAX_TOTAL_FONT_BYTES = 2 * 1024 * 1024;
+  const DEFAULT_LINE_HEIGHT = 16;
+  let scrollForwarding = false;
+  let scrollRaf = 0;
+  let trustedTopOrigin = null;
+
+  // Allow entries like "https://*.preview.i.perplexity.ai" — the wildcard
+  // matches a single DNS label (no dots), so "https://*.foo" cannot stretch
+  // across multiple labels.
+  function matchesAllowedOrigin(origin) {
+    if (!origin) return false;
+    for (const entry of allowedParentOrigins) {
+      if (!entry.includes("*")) {
+        if (entry === origin) return true;
+        continue;
+      }
+      const pattern = new RegExp(
+        "^" +
+          entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+") +
+          "$",
+      );
+      if (pattern.test(origin)) return true;
+    }
+    return false;
+  }
+
+  // Trust decision: when the sender is same-origin-visible (event.origin is a
+  // real origin like https://www.perplexity.ai) we trust event.origin directly.
+  // When event.origin is "null" (opaque broker srcdoc), we fall back to the
+  // broker's stamped `parentOrigin` to identify the top window. The fallback
+  // is claim-only — we rely on the browser's native `targetOrigin` enforcement
+  // on the response path (see postToTrustedTop) to ensure replies can't be
+  // delivered to anyone but the actual top window of that claimed origin.
+  function getTrustedParentOrigin(event) {
+    const forwardedParentOrigin =
+      typeof event.data.parentOrigin === "string" ? event.data.parentOrigin : null;
+    const parentOrigin = event.origin === "null" ? forwardedParentOrigin : event.origin;
+    return matchesAllowedOrigin(parentOrigin) ? parentOrigin : null;
+  }
+
+  // All responses go to window.top with targetOrigin = the allowlisted origin.
+  // An attacker that iframes us inside their own null-origin broker can claim
+  // any parentOrigin they like, but the browser will drop the reply whenever
+  // the real top's origin doesn't match — so the screenshot never leaves.
+  function postToTrustedTop(message) {
+    if (!trustedTopOrigin) return;
+    try {
+      window.top.postMessage(message, trustedTopOrigin);
+    } catch (_error) {}
+  }
+
+  const PICK_CAPABILITIES = ["pick"];
+  const PICK_CHAIN_LENGTH = 4;
+  const PICK_MAX_TEXT_CHARS = 120;
+  const PICK_MAX_HTML_CHARS = 300;
+
+  function truncate(value, maxChars) {
+    return value.length > maxChars ? value.slice(0, maxChars - 1) + "…" : value;
+  }
+
+  function isPickableElement(element) {
+    return (
+      element instanceof Element &&
+      element !== document.documentElement &&
+      element !== document.body
+    );
+  }
+
+  function resolvePickTarget(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const element = document.elementFromPoint(x, y);
+    return isPickableElement(element) ? element.closest("svg") || element : null;
+  }
+
+  function pickLabel(element) {
+    if (element.id) return element.localName + "#" + element.id;
+    return [element.localName].concat(Array.from(element.classList).slice(0, 2)).join(".");
+  }
+
+  // Only attributes that help find the element in source. data-* values and URL
+  // query strings or fragments can carry tokens.
+  const PICK_ATTRIBUTES = new Set([
+    "id",
+    "class",
+    "name",
+    "type",
+    "role",
+    "alt",
+    "aria-label",
+    "href",
+    "src",
+  ]);
+
+  function pickAttributeValue(attribute) {
+    return attribute.name === "href" || attribute.name === "src"
+      ? attribute.value.split(/[?#]/)[0]
+      : attribute.value;
+  }
+
+  function describePickElement(element) {
+    const chain = [];
+    for (
+      let current = element;
+      isPickableElement(current) && chain.length < PICK_CHAIN_LENGTH;
+      current = current.parentElement
+    ) {
+      chain.unshift(current);
+    }
+    const attributes = Array.from(element.attributes)
+      .filter((attribute) => PICK_ATTRIBUTES.has(attribute.name))
+      .map((attribute) => ` ${attribute.name}="${pickAttributeValue(attribute).replace(/"/g, "&quot;")}"`)
+      .join("");
+    const text = (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim();
+    return {
+      chain: chain.map(pickLabel),
+      html: truncate(`<${element.localName}${attributes}>`, PICK_MAX_HTML_CHARS),
+      text: text ? truncate(text, PICK_MAX_TEXT_CHARS) : undefined,
+    };
+  }
+
+  // Hover asks once per frame, and innerText on a large section forces layout,
+  // so only the rect is re-read while the pointer stays on the same element.
+  // Clicks ask for fresh details since the page may have changed the element.
+  let lastPick = null;
+
+  function describePickTarget(element, fresh) {
+    if (fresh || lastPick?.element !== element) {
+      lastPick = { element, details: describePickElement(element) };
+    }
+    const rect = element.getBoundingClientRect();
+    return {
+      rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      ...lastPick.details,
+    };
+  }
+
+  function inlineAll(original, clone) {
+    if (original.nodeType !== 1 || clone.nodeType !== 1) return;
+
+    try {
+      const computedStyle = getComputedStyle(original);
+      // cssText on a computed style is the serialized declaration in modern
+      // Chromium/Safari — a single read beats enumerating ~400 longhand
+      // properties. Firefox returns "" here, so we fall back on empty.
+      const serialized = computedStyle.cssText;
+      if (serialized) {
+        clone.style.cssText = serialized;
+      } else {
+        const parts = new Array(computedStyle.length);
+        for (let index = 0; index < computedStyle.length; index += 1) {
+          const property = computedStyle[index];
+          parts[index] = `${property}:${computedStyle.getPropertyValue(property)};`;
+        }
+        clone.style.cssText = parts.join("");
+      }
+    } catch (_error) {}
+
+    const originalChildren = original.children;
+    const clonedChildren = clone.children;
+    for (
+      let index = 0;
+      index < originalChildren.length && index < clonedChildren.length;
+      index += 1
+    ) {
+      inlineAll(originalChildren[index], clonedChildren[index]);
+    }
+  }
+
+  function extractFontUrl(srcValue) {
+    const matches = [
+      ...srcValue.matchAll(
+        /url\(["']?([^"')]+)["']?\)(?:\s*format\(["']?([^"')]+)["']?\))?/gi,
+      ),
+    ];
+    if (matches.length === 0) return null;
+    const woff2 = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff2"));
+    if (woff2) return woff2[1];
+    const woff = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff"));
+    if (woff) return woff[1];
+    return matches[0][1];
+  }
+
+  // Cache resolved font URL -> data URI across captures. Fonts on a page
+  // essentially never change, and a batch run emits multiple captures back to
+  // back — without this we'd refetch + re-base64 every time.
+  const fontDataUriCache = new Map();
+  const SRC_DECLARATION_RE = /src\s*:\s*[^;}]+/i;
+
+  async function fetchAsDataUri(url) {
+    if (fontDataUriCache.has(url)) return fontDataUriCache.get(url);
+    let dataUri = null;
+    try {
+      const response = await fetch(url, { mode: "cors", credentials: "omit" });
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size <= MAX_FONT_BYTES) {
+          dataUri = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (_error) {
+      dataUri = null;
+    }
+    fontDataUriCache.set(url, dataUri);
+    return dataUri;
+  }
+
+  function collectFontFaceRuleTexts() {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      let cssRules;
+      try {
+        cssRules = sheet.cssRules;
+      } catch (_error) {
+        continue;
+      }
+      if (!cssRules) continue;
+      for (const rule of cssRules) {
+        const cssText = rule.cssText || "";
+        if (cssText.startsWith("@font-face")) rules.push(cssText);
+      }
+    }
+    return rules;
+  }
+
+  async function buildInlinedFontCss() {
+    const ruleTexts = collectFontFaceRuleTexts();
+    if (ruleTexts.length === 0) return null;
+
+    const resolved = ruleTexts.map((cssText) => {
+      if (!SRC_DECLARATION_RE.test(cssText)) return null;
+      const srcMatch = cssText.match(/src\s*:\s*([^;}]+)[;}]/i);
+      if (!srcMatch) return null;
+      const url = extractFontUrl(srcMatch[1]);
+      if (!url) return null;
+      try {
+        return { cssText, url: new URL(url, document.baseURI).href };
+      } catch (_error) {
+        return null;
+      }
+    });
+
+    const dataUris = await Promise.all(
+      resolved.map((entry) => (entry ? fetchAsDataUri(entry.url) : Promise.resolve(null))),
+    );
+
+    const inlined = [];
+    let totalBytes = 0;
+    for (let index = 0; index < resolved.length; index += 1) {
+      const entry = resolved[index];
+      const dataUri = dataUris[index];
+      if (!entry || !dataUri) continue;
+      const approxBytes = dataUri.length * 0.75;
+      if (totalBytes + approxBytes > MAX_TOTAL_FONT_BYTES) break;
+      totalBytes += approxBytes;
+      inlined.push(entry.cssText.replace(SRC_DECLARATION_RE, `src: url("${dataUri}")`));
+    }
+    return inlined.length > 0 ? inlined.join("\n") : null;
+  }
+
+  function stripExternal(clone) {
+    const images = clone.querySelectorAll("img");
+    for (let index = 0; index < images.length; index += 1) {
+      const src = images[index].getAttribute("src");
+      if (src && !src.startsWith("data:")) images[index].removeAttribute("src");
+    }
+
+    const elements = clone.querySelectorAll("*");
+    for (let index = 0; index < elements.length; index += 1) {
+      const style = elements[index].style.cssText;
+      if (style && style.includes("url(")) {
+        elements[index].style.cssText = style.replace(
+          /url\(["']?(?!data:)[^)"']*["']?\)/gi,
+          "none",
+        );
+      }
+    }
+  }
+
+  function emitScroll() {
+    scrollRaf = 0;
+    if (!scrollForwarding) return;
+    postToTrustedTop({
+      type: "INLINE_EDIT_SCROLL",
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      capabilities: PICK_CAPABILITIES,
+    });
+  }
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (!scrollForwarding || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(emitScroll);
+    },
+    { passive: true, capture: true },
+  );
+
+  async function handleCaptureRequest(event) {
+    const requestId = event.data.requestId;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    function postResult(dataUrl) {
+      postToTrustedTop({
+        type: "INLINE_EDIT_SCREENSHOT_RESULT",
+        requestId,
+        dataUrl,
+        scrollX,
+        scrollY,
+      });
+    }
+
+    try {
+      // Wait for any pending web fonts to resolve so both inline metrics and
+      // the @font-face inlining below see the same loaded faces.
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (_error) {}
+      }
+
+      const clone = document.documentElement.cloneNode(true);
+      inlineAll(document.documentElement, clone);
+
+      const removedNodes = clone.querySelectorAll("script,link[rel=\"stylesheet\"],style");
+      for (let index = 0; index < removedNodes.length; index += 1) {
+        removedNodes[index].remove();
+      }
+
+      stripExternal(clone);
+
+      // Re-embed web fonts as data-URI @font-face rules so the SVG rasterizer
+      // can resolve them — external font URLs aren't fetched during
+      // foreignObject rendering, which would otherwise force a fallback face
+      // and change text metrics.
+      const inlinedFontCss = await buildInlinedFontCss();
+      if (inlinedFontCss) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = inlinedFontCss;
+        const head = clone.querySelector("head");
+        if (head) head.appendChild(styleEl);
+        else clone.insertBefore(styleEl, clone.firstChild);
+      }
+
+      const html = new XMLSerializer().serializeToString(clone);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+        '<foreignObject width="100%" height="100%">' +
+        `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">` +
+        `<div style="position:relative;left:-${scrollX}px;top:-${scrollY}px">` +
+        html +
+        "</div></div></foreignObject></svg>";
+      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const image = new Image();
+      image.onload = function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        postResult(canvas.toDataURL("image/png"));
+      };
+      image.onerror = function () {
+        postResult(null);
+      };
+      image.src = svgUrl;
+    } catch (_error) {
+      postResult(null);
+    }
+  }
+
+  window.addEventListener("message", function (event) {
+    if (!event.data) return;
+    // Only accept messages from the direct parent frame. Blocks sibling /
+    // unrelated-window postMessage senders that could otherwise reach us.
+    if (event.source !== window.parent) return;
+
+    const trustedParentOrigin = getTrustedParentOrigin(event);
+    if (!trustedParentOrigin) return;
+    trustedTopOrigin = trustedParentOrigin;
+
+    if (event.data.type === "INLINE_EDIT_PICK") {
+      const element = resolvePickTarget(event.data.x, event.data.y);
+      postToTrustedTop({
+        type: "INLINE_EDIT_PICK_RESULT",
+        seq: event.data.seq,
+        target: element ? describePickTarget(element, event.data.fresh === true) : null,
+      });
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_START") {
+      scrollForwarding = true;
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_STOP") {
+      scrollForwarding = false;
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_BY") {
+      const { deltaX, deltaY, deltaMode } = event.data;
+      if (!scrollForwarding || !Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return;
+      if (deltaMode !== 0 && deltaMode !== 1 && deltaMode !== 2) return;
+      const lineHeight =
+        parseFloat(getComputedStyle(document.documentElement).lineHeight) || DEFAULT_LINE_HEIGHT;
+      const scaleX = deltaMode === 1 ? lineHeight : deltaMode === 2 ? window.innerWidth : 1;
+      const scaleY = deltaMode === 1 ? lineHeight : deltaMode === 2 ? window.innerHeight : 1;
+      // The selection overlay receives the wheel event instead of this iframe.
+      // Instant scrolling preserves trackpad deltas even on smooth-scroll sites.
+      window.scrollBy({ left: deltaX * scaleX, top: deltaY * scaleY, behavior: "instant" });
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type !== "INLINE_EDIT_CAPTURE_REQUEST") return;
+
+    handleCaptureRequest(event);
+  });
+})();
+
+
+</script></body>
+</html>

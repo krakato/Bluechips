@@ -1,0 +1,30 @@
+Qué hace ahora la app
+Al abrir la página, el simulador pide cotizaciones e histórico de 6 meses a
+ Yahoo Finance para Santander, BBVA, Telefónica, IAG y el índice IBEX 35. 
+ Si el acceso directo falla por CORS, encadena proxies de 
+ lectura (r.jina.ai → AllOrigins → CodeTabs) y, solo si todos fallan, cae a data.js 
+ con los cierres de referencia (Yahoo Finance).
+
+El estado se ve en la cabecera: verde «EN VIVO · Yahoo Finance», ámbar «MIXTO · n/4 
+en vivo» con aviso que nombra los valores sin conexión, 
+o «RESPALDO LOCAL» con el aviso y el botón Reintentar. 
+Cada fila de la cartera marca su origen (VIVO / RESPALDO), 
+y el bloque «Cierres / Última lectura / Proveedor» indica de dónde sale cada dato.
+
+Cambios de esta pasada
+Corregí la variación diaria: se calculaba contra el cierre previo 
+al inicio del rango de 6 meses y mostraba subidas del +14 %, 
+cuando lo correcto era el cierre de la sesión anterior. 
+También añadí el IBEX 35 en vivo al ticker, arreglé el aviso que se 
+mostraba vacío por un conflicto de CSS con el atributo hidden, 
+dejé que los subtítulos de los KPI fluyan sin invadir la columna vecina, 
+y compacté el ticker para que quepa en una sola línea 
+(se oculta por debajo de 1345 px para no cortar texto).
+
+Probado con navegador automatizado: presets, perfiles de bróker, 
+interruptores de ITF y comisión de salida, 25.000 trayectorias en bootstrap, 
+deriva por momento, arrastre del slider sin perder el foco, ejecutar y reiniciar cartera, 
+y los tres modos de datos (en vivo, mixto bloqueando un valor, 
+respaldo bloqueando toda la red, con reintento que recupera el directo). 
+Sin desbordes horizontales de 320 a 1920 px, sin texto recortado y 
+con los gráficos pintando en todos los tamaños.
